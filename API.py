@@ -1,0 +1,54 @@
+from fastapi import FastAPI
+from pymongo import MongoClient
+
+app = FastAPI()
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client["agp_data"]
+collection = db["mediciones"]
+
+###################### Obtener una muestra
+@app.get("/samples/{id}")
+def get_sample(id: int):
+    dato = collection.find_one({"ID_Muestra": int(id)}, {"_id": 0}) ### He forzado con un int(id) para que salgan 
+    ### los paceintes, si no se pone el int(id) no salen los pacientes.
+    
+    if dato:
+        return dato
+    else:
+        return {"error": "Muestra no encontrada"}
+####################### Obtener IDs de muestras 
+@app.get("/samples")
+def get_samples():
+    return collection.distinct("ID_Muestra")
+
+####################### Obtener estadísticas globales
+@app.get("/stats/global")
+def global_stats():
+    pipeline = [
+        {
+            "$group": {
+                "_id": None,
+                "Firmicutes": {"$avg": "$Firmicutes_%"},
+                "Bacteroidetes": {"$avg": "$Bacteroidetes_%"},
+                "Actinobacteria": {"$avg": "$Actinobacteria_%"},
+                "Proteobacteria": {"$avg": "$Proteobacteria_%"},
+                "Shannon": {"$avg": "$Diversidad_Shannon"}
+            }
+        }
+    ]
+    return list(collection.aggregate(pipeline))[0]
+######################## Histograma Shannon
+@app.get("/stats/shannon")
+def shannon_dist():
+    data = collection.find({}, {"_id": 0, "Diversidad_Shannon": 1})
+    return [d["Diversidad_Shannon"] for d in data if "Diversidad_Shannon" in d]
+######################### IMC vs Shannon
+@app.get("/stats/imc_shannon")
+def imc_shannon():
+    data = collection.find({}, {"_id": 0, "IMC": 1, "Diversidad_Shannon": 1})
+    return [
+        {"IMC": d.get("IMC"), "Shannon": d.get("Diversidad_Shannon")}
+        for d in data
+        if d.get("IMC") and d.get("Diversidad_Shannon")
+    ]
